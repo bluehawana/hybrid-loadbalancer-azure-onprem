@@ -15,9 +15,9 @@ So I built it the other way around.
 Number 3 is what most setups get wrong. The thing that decides where traffic goes must survive the failure it is deciding about.
 
 When on-prem goes down
-The controller probes the service every 10 seconds and reads CPU, memory and latency from Prometheus.
-Three failed checks, or sustained overload, and all traffic moves to Azure. One HAProxy runtime command. No restart, no DNS wait.
-At the same moment it triggers a restart of the on-prem service. Nobody is paged.
+The controller checks the service every 10 seconds and reads CPU, memory and latency from Prometheus.
+Three failed checks in a row, so within 30 seconds, or sustained overload, and all traffic moves to Azure automatically. One HAProxy command. No restart, no DNS wait.
+At the same moment it triggers a restart of the on-prem service. No developer is woken up, and most customers never notice.
 On-prem must then stay healthy for a full recovery window before traffic drains back, so a flapping server does not drag customers with it. Then Azure goes idle again.
 
 I timed it on a test cluster with mock backends: 13 of 13 steps passed. Traffic was on Azure 6.5 seconds after the primary died. Falling back caused 0 seconds of downtime.
