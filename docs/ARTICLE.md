@@ -31,6 +31,7 @@ Traffic was on Azure 6.5 seconds after the primary died. Clients saw about 3 sec
 Why not just run everything twice
 Because then you pay twice. Here Azure is a temporary backup, not a second production site.
 The controller counts every second served from Azure, so one Grafana dashboard shows uptime next to what the backup actually cost. After a month you decide with data instead of opinions: stay on-prem, stay hybrid, or move.
+The second dashboard is the one for the wall: red and green only. Kill the on-prem service and the on-prem tile turns red while the service tile stays green and availability stays at 100%.
 
 Three things I learned building it
 - Check the backup all the time, not only on the day you need it. Failing over to a dead VM is worse than not failing over.

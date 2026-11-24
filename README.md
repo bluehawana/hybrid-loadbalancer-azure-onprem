@@ -120,6 +120,33 @@ Dockerfile                   Controller image
 | `hybridlb_failover_events_total{reason}` | failover / recovery transitions |
 | `hybridlb_azure_active_seconds_total` | Azure time used → cost comparison |
 
+## Dashboards (red / green at a glance)
+
+Two Grafana dashboards ship in `monitoring/dashboards/`. Import either one in Grafana
+(**Dashboards → New → Import → upload JSON**) and pick your Prometheus datasource.
+
+**`hybridlb-failover-demo.json`** - the one to put on a wall screen or show in a demo:
+
+| Panel | Green | Red / other |
+|---|---|---|
+| Service (what the customer sees) | **UP** - reachable through the load balancer, on-prem *or* Azure | **DOWN** - both sides are gone |
+| Service availability % | at or above the 99.7 % target (100 % through a clean failover) | below target |
+| Serving from | on-prem | blue = Azure |
+| On-prem node | healthy | red = failing health checks |
+| Azure standby | ready to take traffic | red = the escape hatch itself is broken |
+| Timelines | unbroken green bar = customers were served the whole time | red gap = real outage |
+
+The point of the demo: kill the on-prem service and watch **On-prem node** go red while
+**Service** stays green and availability stays at 100 %.
+
+**`hybridlb-failover.json`** - the operations view: failover state, on-prem CPU / memory /
+latency, failover count, on-prem uptime %, Azure hours used and estimated Azure cost
+(set the `vm_hourly_cost` variable to your VM's hourly price).
+
+The service label in the demo dashboard queries is `webapp`; change it if you rename the
+service in `services.yaml`. With grafana-operator you can publish the dashboard from Git
+instead, see `monitoring/grafana/hybridlb-failover-dashboard.yaml`.
+
 ## Testing & durability (proof it recovers within seconds)
 
 Two scripts in `benchmark/` prove the failover works — not just once, but every time.

@@ -39,7 +39,7 @@
       "type": "stat",
       "title": "Web app service (what the customer sees)",
       "description": "Synthetic probe through the load balancer's front door. UP = customers can reach the service, on-prem OR Azure. DOWN only if BOTH are gone.",
-      "gridPos": { "x": 0, "y": 0, "h": 9, "w": 12 },
+      "gridPos": { "x": 0, "y": 0, "h": 9, "w": 8 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "fieldConfig": {
         "defaults": {
@@ -60,6 +60,32 @@
         "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
         "orientation": "auto", "textMode": "value_and_name", "wideLayout": true,
         "colorMode": "background", "graphMode": "area", "justifyMode": "center",
+        "showPercentChange": false, "percentChangeColorMode": "standard"
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Service availability % (selected range)",
+      "description": "Share of time the service answered through the load balancer in the selected time range. Green at or above the 99.7 % target, red below it. Stays at 100 % through a failover when the switch is clean.",
+      "gridPos": { "x": 8, "y": 0, "h": 9, "w": 4 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "decimals": 2, "min": 0, "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 99.7, "color": "green" } ] },
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "100 * avg_over_time(hybridlb_service_reachable{service=\"webapp\"}[$__range])", "legendFormat": "availability", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto", "textMode": "value", "wideLayout": true,
+        "colorMode": "background", "graphMode": "none", "justifyMode": "center",
         "showPercentChange": false, "percentChangeColorMode": "standard"
       }
     },
