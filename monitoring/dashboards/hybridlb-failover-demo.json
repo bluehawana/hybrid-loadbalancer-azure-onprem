@@ -1,0 +1,209 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "liveNow": true,
+  "links": [],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["hybrid-lb", "demo", "failover"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Hybrid Failover — DEMO",
+  "uid": "hybridlb-failover-demo",
+  "version": 1,
+  "weekStart": "",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Web app service (what the customer sees)",
+      "description": "Synthetic probe through the load balancer's front door. UP = customers can reach the service, on-prem OR Azure. DOWN only if BOTH are gone.",
+      "gridPos": { "x": 0, "y": 0, "h": 9, "w": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "red", "index": 0, "text": "DOWN" } } },
+            { "type": "value", "options": { "1": { "color": "green", "index": 1, "text": "UP" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" } ] },
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_service_reachable{service=\"webapp\"}", "legendFormat": "webapp", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto", "textMode": "value_and_name", "wideLayout": true,
+        "colorMode": "background", "graphMode": "area", "justifyMode": "center",
+        "showPercentChange": false, "percentChangeColorMode": "standard"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Serving from",
+      "description": "Where traffic is actually flowing.",
+      "gridPos": { "x": 12, "y": 0, "h": 4, "w": 12 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "green", "index": 0, "text": "On-prem" } } },
+            { "type": "value", "options": { "1": { "color": "yellow", "index": 1, "text": "Degraded" } } },
+            { "type": "value", "options": { "2": { "color": "blue", "index": 2, "text": "On Azure" } } },
+            { "type": "value", "options": { "3": { "color": "blue", "index": 3, "text": "Recovering" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_failover_state{service=\"webapp\"}", "legendFormat": "webapp", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto", "textMode": "value", "wideLayout": true,
+        "colorMode": "background", "graphMode": "none", "justifyMode": "center",
+        "showPercentChange": false, "percentChangeColorMode": "standard"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "On-prem node",
+      "description": "Health of the on-prem host itself (the on-prem primary).",
+      "gridPos": { "x": 12, "y": 4, "h": 5, "w": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "red", "index": 0, "text": "DOWN" } } },
+            { "type": "value", "options": { "1": { "color": "green", "index": 1, "text": "UP" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_primary_healthy{service=\"webapp\"}", "legendFormat": "on-prem", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto", "textMode": "value", "wideLayout": true,
+        "colorMode": "background", "graphMode": "none", "justifyMode": "center",
+        "showPercentChange": false, "percentChangeColorMode": "standard"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Azure standby (escape hatch)",
+      "description": "Continuously verified so we never fail over to a dead standby.",
+      "gridPos": { "x": 18, "y": 4, "h": 5, "w": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "red", "index": 0, "text": "OFF" } } },
+            { "type": "value", "options": { "1": { "color": "green", "index": 1, "text": "READY" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_backup_healthy{service=\"webapp\"}", "legendFormat": "azure", "refId": "A" }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "orientation": "auto", "textMode": "value", "wideLayout": true,
+        "colorMode": "background", "graphMode": "none", "justifyMode": "center",
+        "showPercentChange": false, "percentChangeColorMode": "standard"
+      }
+    },
+    {
+      "id": 5,
+      "type": "state-timeline",
+      "title": "Service reachable over time  (green = customers served, unbroken through failover)",
+      "gridPos": { "x": 0, "y": 9, "h": 7, "w": 24 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 85, "lineWidth": 0 },
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "red", "index": 0, "text": "DOWN" } } },
+            { "type": "value", "options": { "1": { "color": "green", "index": 1, "text": "UP" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "red" }, { "value": 1, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_service_reachable{service=\"webapp\"}", "legendFormat": "service", "refId": "A" }
+      ],
+      "options": {
+        "mergeValues": true, "showValue": "never", "alignValue": "center", "rowHeight": 0.9,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      }
+    },
+    {
+      "id": 6,
+      "type": "state-timeline",
+      "title": "Where traffic is served over time  (green = on-prem, blue = Azure)",
+      "gridPos": { "x": 0, "y": 16, "h": 6, "w": 24 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 85, "lineWidth": 0 },
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "color": "green", "index": 0, "text": "On-prem" } } },
+            { "type": "value", "options": { "1": { "color": "yellow", "index": 1, "text": "Degraded" } } },
+            { "type": "value", "options": { "2": { "color": "blue", "index": 2, "text": "On Azure" } } },
+            { "type": "value", "options": { "3": { "color": "blue", "index": 3, "text": "Recovering" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [ { "value": null, "color": "green" } ] }
+        },
+        "overrides": []
+      },
+      "pluginVersion": "12.4.1",
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "hybridlb_failover_state{service=\"webapp\"}", "legendFormat": "traffic", "refId": "A" }
+      ],
+      "options": {
+        "mergeValues": true, "showValue": "never", "alignValue": "center", "rowHeight": 0.9,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      }
+    }
+  ]
+}

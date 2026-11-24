@@ -1,0 +1,29 @@
+# Tells the in-cluster Prometheus to scrape the failover controller (and HAProxy) metrics.
+# The controller exposes /metrics on port 8080 (Program.cs -> app.MapMetrics()), HAProxy on 8404.
+#
+# NOTE: applying this needs RBAC on servicemonitors.monitoring.coreos.com, which a namespace-scoped
+# role usually does NOT have. Hand this to the monitoring owners. The job relabel makes
+# up{job="hybrid-loadbalancer-controller"} match the HybridFailoverControllerDown alert expression.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hybrid-loadbalancer
+  labels:
+    app: hybrid-loadbalancer
+spec:
+  namespaceSelector:
+    matchNames:
+      - hybridlb-test
+  selector:
+    matchLabels:
+      app: hybrid-loadbalancer
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      relabelings:
+        - targetLabel: job
+          replacement: hybrid-loadbalancer-controller
+    - port: haproxy-metrics
+      path: /metrics
+      interval: 30s

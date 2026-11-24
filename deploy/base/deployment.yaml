@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hybrid-loadbalancer
+  labels:
+    app: hybrid-loadbalancer
+    app.kubernetes.io/part-of: hybrid-loadbalancer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hybrid-loadbalancer
+  template:
+    metadata:
+      labels:
+        app: hybrid-loadbalancer
+        app.kubernetes.io/part-of: hybrid-loadbalancer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      # Pull the controller image from ACR (data-plane scoped token, not the internal registry SA cred).
+      imagePullSecrets:
+        - name: acr-secret
+      containers:
+        # Data plane: HAProxy holds the on-prem primary + Azure backup servers.
+        - name: haproxy
+          image: haproxy:2.9-alpine
+          ports:
+            - name: proxy
+              containerPort: 8443
+            - name: haproxy-metrics
+              containerPort: 8404
+          volumeMounts:
+            - name: haproxy-config
+              mountPath: /usr/local/etc/haproxy/haproxy.cfg
+              subPath: haproxy.cfg
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+        # Control plane: predictive failover brain, drives HAProxy over localhost:9999.
+        - name: controller
+          image: hybrid-loadbalancer-controller-img
+          ports:
+            - name: metrics
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: ServicesConfigPath
+              value: /app/config/services.yaml
+          volumeMounts:
+            - name: failover-services
+              mountPath: /app/config/services.yaml
+              subPath: services.yaml
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      volumes:
+        - name: haproxy-config
+          configMap:
+            name: haproxy-config
+        - name: failover-services
+          configMap:
+            name: failover-services

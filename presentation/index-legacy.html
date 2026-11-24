@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hybrid Failover Load Balancer — On-prem → Azure</title>
+<style>
+  :root {
+    --bg: #0e1420;
+    --panel: #16202f;
+    --panel-2: #1d2a3d;
+    --ink: #e7eef7;
+    --muted: #8ea3bd;
+    --line: #2a3a52;
+    --green: #35c46b;
+    --amber: #f5b93d;
+    --red: #ff5d5d;
+    --azure: #3aa0ff;
+    --accent: #4f8cff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: radial-gradient(1200px 700px at 70% -10%, #1a2740 0%, var(--bg) 55%);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    overflow: hidden;
+  }
+  .deck { height: 100vh; width: 100vw; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    padding: 56px 72px 90px;
+    display: none;
+    flex-direction: column;
+    animation: fade .4s ease;
+  }
+  .slide.active { display: flex; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px);} to {opacity:1; transform:none;} }
+
+  h1 { font-size: 46px; margin: 0 0 8px; letter-spacing: .3px; }
+  h2 { font-size: 32px; margin: 0 0 18px; }
+  .kicker { color: var(--accent); font-weight: 700; letter-spacing: 2px; text-transform: uppercase; font-size: 14px; margin-bottom: 14px; }
+  p, li { font-size: 20px; line-height: 1.5; color: var(--ink); }
+  .muted { color: var(--muted); }
+  .grid { display: grid; gap: 18px; }
+  .cards { grid-template-columns: repeat(3, 1fr); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px; box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  }
+  .card h3 { margin: 0 0 8px; font-size: 20px; }
+  .card .big { font-size: 40px; font-weight: 800; }
+  .green { color: var(--green); } .amber { color: var(--amber); } .red { color: var(--red); } .azure { color: var(--azure); }
+  .pill { display:inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; font-weight: 700; }
+  .pill.g { background: rgba(53,196,107,.15); color: var(--green); }
+  .pill.r { background: rgba(255,93,93,.15); color: var(--red); }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 8px 0; }
+
+  /* footer nav */
+  .nav {
+    position: absolute; bottom: 22px; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 40px;
+  }
+  .dots { display: flex; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); cursor: pointer; }
+  .dot.on { background: var(--accent); }
+  .btn {
+    background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    padding: 10px 16px; border-radius: 10px; cursor: pointer; font-size: 15px; font-weight: 600;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger  { background: #3a1c22; border-color: #6b2a2f; color: var(--red); }
+  .btn.warn    { background: #3a2f18; border-color: #6b552a; color: var(--amber); }
+  .btn.ok      { background: #163227; border-color: #2a6b4c; color: var(--green); }
+  .brand { position: absolute; top: 26px; right: 40px; color: var(--muted); font-weight: 700; letter-spacing: 1px; }
+
+  /* ---- live demo ---- */
+  .demo { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; flex: 1; min-height: 0; }
+  .stage { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .node {
+    position: absolute; width: 150px; padding: 12px 14px; border-radius: 12px;
+    background: var(--panel-2); border: 1px solid var(--line); text-align: center;
+    transition: border-color .3s, box-shadow .3s, opacity .3s;
+  }
+  .node .t { font-weight: 700; font-size: 15px; }
+  .node .s { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .node.clients { left: 30px; top: 44%; }
+  .node.lb      { left: 300px; top: 44%; border-color: var(--accent); }
+  .node.onprem  { right: 34px; top: 16%; }
+  .node.azure   { right: 34px; top: 66%; }
+  .node.serving { border-color: var(--green); box-shadow: 0 0 0 3px rgba(53,196,107,.18); }
+  .node.azure.serving { border-color: var(--azure); box-shadow: 0 0 0 3px rgba(58,160,255,.20); }
+  .node.dead { border-color: var(--red); opacity: .55; box-shadow: 0 0 0 3px rgba(255,93,93,.18); }
+  .node.hot { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(245,185,61,.18); }
+
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .wire { stroke: var(--line); stroke-width: 3; fill: none; }
+  .wire.flow { stroke-dasharray: 8 10; animation: march 1s linear infinite; }
+  .wire.onprem.flow { stroke: var(--green); }
+  .wire.azure.flow  { stroke: var(--azure); }
+  @keyframes march { to { stroke-dashoffset: -36; } }
+
+  .gauge { margin-top: 8px; height: 8px; background: #0e1826; border-radius: 6px; overflow: hidden; }
+  .gauge > i { display:block; height: 100%; width: 20%; background: var(--green); transition: width .4s, background .4s; }
+
+  .clock {
+    position: absolute; left: 20px; top: 16px; font-variant-numeric: tabular-nums;
+    font-size: 26px; font-weight: 800; letter-spacing: 1px;
+  }
+  .badge {
+    position: absolute; right: 20px; top: 16px; padding: 6px 14px; border-radius: 999px;
+    font-weight: 800; font-size: 14px; background: rgba(53,196,107,.15); color: var(--green);
+  }
+  .banner {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(.9);
+    background: rgba(10,16,26,.9); border: 1px solid var(--accent); border-radius: 14px;
+    padding: 18px 26px; text-align: center; opacity: 0; pointer-events: none; transition: .35s;
+    max-width: 80%;
+  }
+  .banner.show { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  .banner .h { font-size: 22px; font-weight: 800; }
+
+  .side { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .controls .btn { width: 100%; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .stat .k { font-size: 12px; color: var(--muted); }
+  .stat .v { font-size: 24px; font-weight: 800; }
+  .log {
+    background: #0b111c; border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; font-family: "Cascadia Code", Consolas, monospace; font-size: 13px;
+    flex: 1; overflow: auto; min-height: 80px;
+  }
+  .log div { padding: 3px 0; border-bottom: 1px dashed #1a2537; color: #b9c9de; }
+  .log .t { color: #6f86a6; }
+  .log b.g { color: var(--green);} .log b.a{color:var(--amber);} .log b.r{color:var(--red);} .log b.z{color:var(--azure);}
+  .hint { color: var(--muted); font-size: 14px; }
+  .titlewrap { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .logo { font-weight: 900; font-size: 22px; letter-spacing: 3px; color: var(--accent); }
+
+  /* architecture diagram */
+  .arch { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+          background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+  .archsvg { width: 100%; height: 100%; max-height: 66vh; }
+
+  /* results / proof */
+  .result-hero { display: grid; grid-template-columns: 1fr 1.2fr; gap: 22px; flex: 1; min-height: 0; }
+  .result-hero .card { display: flex; flex-direction: column; justify-content: center; }
+  .bars { display: flex; flex-direction: column; gap: 14px; justify-content: center; }
+  .bar-row { display: grid; grid-template-columns: 210px 1fr 70px; align-items: center; gap: 12px; }
+  .bar-row .lbl { font-size: 15px; color: var(--muted); }
+  .bar-track { height: 22px; background: #0e1826; border-radius: 6px; overflow: hidden; position: relative; }
+  .bar-track > i { display: block; height: 100%; border-radius: 6px; }
+  .bar-row .val { font-weight: 800; font-size: 16px; text-align: right; }
+  .stamp { display:inline-block; padding: 8px 18px; border-radius: 10px; font-weight: 800;
+           background: rgba(53,196,107,.15); color: var(--green); border: 1px solid #2a6b4c; }
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+  <!-- 1: Title -->
+  <section class="slide active">
+    <div class="brand">Reliability</div>
+    <div class="titlewrap">
+      <div class="logo">HYBRID FAILOVER</div>
+      <div class="kicker" style="margin-top:18px">On-prem → Azure Failover Load Balancer</div>
+      <h1>Keep the service up when the old servers can't.</h1>
+      <p class="muted" style="max-width:820px">Automatic traffic failover from aging on-prem Windows hosts to Azure —
+      so a dying server at 2:30&nbsp;AM no longer means a paged engineer and an angry customer.</p>
+      <div style="margin-top:22px" class="hint">Use ← / → to navigate · press <b>D</b> to jump to the live demo</div>
+    </div>
+  </section>
+
+  <!-- 2: The problem -->
+  <section class="slide">
+    <div class="kicker">The 2:30 AM problem</div>
+    <h2>Today, recovery depends on a human waking up</h2>
+    <div class="grid cards">
+      <div class="card"><h3>What happens now</h3><p class="muted">An on-prem host (e.g. <b>ONPREM-WEB-01</b>, web app host) overloads or dies. Splunk pages the on-call. Someone wakes up and manually runs the release pipeline to restart it.</p></div>
+      <div class="card"><h3>The cost</h3><p class="big red">hours</p><p class="muted">of downtime per incident — customers notice, and the uptime target slips out of reach.</p></div>
+      <div class="card"><h3>Root cause</h3><p class="muted">The services still live on <b>aging</b> physical servers with no automatic fallback. Single point of failure, no safety net.</p></div>
+    </div>
+    <p style="margin-top:24px">We borrow the proven idea from cloud load balancers — <b>health-based failover</b> — and adapt it to our hybrid on-prem + ARO world.</p>
+  </section>
+
+  <!-- 2b: Why today's LB fails -->
+  <section class="slide">
+    <div class="kicker">Honest diagnosis</div>
+    <h2>Why today's load balancer doesn't save us</h2>
+    <div class="grid cards">
+      <div class="card"><h3>① Same failure domain</h3><p class="muted">Our LB sits on the <b>same on-prem servers</b> it is meant to protect. When the box goes, the balancer goes with it. Who watches the watcher?</p></div>
+      <div class="card"><h3>② Correlated hosts</h3><p class="muted"><b>ONPREM-WEB-02</b> and <b>ONPREM-WEB-01</b> are the same age, same room, same load. When one is overloaded, so is the other — balancing between two failing boxes adds nothing.</p></div>
+      <div class="card"><h3>③ Hard to run</h3><p class="muted">A self-managed on-prem load balancer needs constant expert tuning. That's not where the team's strength is — so it doesn't behave as expected.</p></div>
+    </div>
+    <p style="margin-top:22px" class="amber"><b>A load balancer only helps if it lives outside the thing it protects.</b></p>
+  </section>
+
+  <!-- 2c: Server room is the SPOF -->
+  <section class="slide">
+    <div class="kicker">The real risk</div>
+    <h2>Even a perfect on-prem LB dies with the server room</h2>
+    <div class="grid" style="grid-template-columns:1.1fr .9fr; gap:26px; flex:1">
+      <div>
+        <p>The whole on-prem site is <b>one failure domain</b>. One incident takes down the servers, the LB, and the entry point together — and clients can't even reach the site:</p>
+        <ul>
+          <li>🌐 <b>Internet / network</b> link to the site drops</li>
+          <li>🔥 <b>Cooling / heating</b> fails, hardware overheats and shuts down</li>
+          <li>⚡ <b>Electricity</b> outage in the server room</li>
+        </ul>
+        <p class="amber">If any of these hit, an on-prem-only balancer is powerless — there is nothing left, on that site, to fail over to.</p>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+        <div style="font-size:64px">🏢💥</div>
+        <h3 style="margin-top:10px">On-prem server room</h3>
+        <p class="muted">ONPREM-WEB-02 · ONPREM-WEB-01 · on-prem LB — all behind the same door.</p>
+        <p class="azure" style="margin-top:8px"><b>The escape hatch must be in another datacenter.</b></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3: The solution -->
+  <section class="slide">
+    <div class="kicker">The solution · hybrid, two datacenters</div>
+    <h2>Decision in Azure. On-prem + Azure. Never the same room.</h2>
+    <div class="grid" style="grid-template-columns: 1.1fr .9fr; gap:26px; flex:1">
+      <div>
+        <ul>
+          <li>The failover decision runs in <b>Azure (ARO)</b> — a <b>different datacenter</b>, so a server-room disaster can't take it down.</li>
+          <li>On-prem (ONPREM-WEB-02/62) = <b class="green">primary</b>. Azure = <b class="azure">standby</b>. Two independent failure domains, like cloud availability zones.</li>
+          <li>Health-based failover shifts traffic to Azure <b>before</b> a host dies, on overload, on death — or on a full site outage.</li>
+          <li>It also <b>auto-triggers the restart pipeline</b> to repair on-prem — no 2:30am human.</li>
+          <li>Every failover + Azure minute recorded for a <b>cost comparison</b>.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Three triggers to shift</h3>
+        <p><span class="pill r">Dying soon</span> sustained high CPU / memory / latency → shift early</p>
+        <p><span class="pill r">Overloaded</span> SLO breach → shift</p>
+        <p><span class="pill r">Dead / site down</span> health checks fail → immediate shift</p>
+        <p class="muted" style="margin-top:10px">Recovery: on-prem healthy for a stable window → drain back to the cheap datacenter.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3b: Architecture -->
+  <section class="slide">
+    <div class="kicker">How it fits together · architecture</div>
+    <h2>One picture: the whole failover system</h2>
+    <div class="arch">
+      <svg viewBox="0 0 1180 452" preserveAspectRatio="xMidYMid meet" class="archsvg">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#7f97b8"/>
+          </marker>
+          <marker id="arrowG" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#35c46b"/>
+          </marker>
+          <marker id="arrowZ" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#3aa0ff"/>
+          </marker>
+        </defs>
+
+        <!-- datacenter boundaries -->
+        <rect x="470" y="24" width="440" height="404" rx="16" fill="rgba(58,160,255,.06)" stroke="#295a86" stroke-dasharray="6 6"/>
+        <text x="490" y="50" fill="#3aa0ff" font-size="15" font-weight="700">AZURE · ARO datacenter (different failure domain)</text>
+
+        <rect x="946" y="150" width="212" height="286" rx="16" fill="rgba(53,196,107,.05)" stroke="#2f6b4c" stroke-dasharray="6 6"/>
+        <text x="962" y="176" fill="#35c46b" font-size="15" font-weight="700">ON-PREM server room</text>
+
+        <!-- clients -->
+        <g>
+          <rect x="40" y="196" width="150" height="70" rx="12" fill="#1d2a3d" stroke="#2a3a52"/>
+          <text x="115" y="228" fill="#e7eef7" font-size="15" font-weight="700" text-anchor="middle">Clients /</text>
+          <text x="115" y="248" fill="#e7eef7" font-size="15" font-weight="700" text-anchor="middle">Partners</text>
+        </g>
+
+        <!-- route -->
+        <g>
+          <rect x="250" y="196" width="150" height="70" rx="12" fill="#1d2a3d" stroke="#4f8cff"/>
+          <text x="325" y="226" fill="#e7eef7" font-size="14" font-weight="700" text-anchor="middle">OpenShift Route</text>
+          <text x="325" y="246" fill="#8ea3bd" font-size="12" text-anchor="middle">*.example.com</text>
+        </g>
+
+        <!-- pod: haproxy + controller -->
+        <rect x="500" y="150" width="230" height="176" rx="14" fill="#16202f" stroke="#4f8cff"/>
+        <text x="515" y="174" fill="#8ea3bd" font-size="12" font-weight="700">ONE POD · 2 containers</text>
+        <g>
+          <rect x="516" y="186" width="198" height="58" rx="10" fill="#1d2a3d" stroke="#2a3a52"/>
+          <text x="615" y="210" fill="#e7eef7" font-size="14" font-weight="700" text-anchor="middle">HAProxy — data plane</text>
+          <text x="615" y="230" fill="#8ea3bd" font-size="11" text-anchor="middle">primary + backup · runtime socket</text>
+        </g>
+        <g>
+          <rect x="516" y="252" width="198" height="60" rx="10" fill="#1d2a3d" stroke="#35c46b"/>
+          <text x="615" y="276" fill="#e7eef7" font-size="14" font-weight="700" text-anchor="middle">Failover Controller</text>
+          <text x="615" y="296" fill="#8ea3bd" font-size="11" text-anchor="middle">.NET 8 · the decision brain</text>
+        </g>
+
+        <!-- signals: prometheus / splunk -->
+        <g>
+          <rect x="500" y="352" width="150" height="56" rx="10" fill="#16202f" stroke="#2a3a52"/>
+          <text x="575" y="376" fill="#e7eef7" font-size="13" font-weight="700" text-anchor="middle">Prometheus</text>
+          <text x="575" y="394" fill="#8ea3bd" font-size="11" text-anchor="middle">CPU/mem/latency</text>
+        </g>
+        <g>
+          <rect x="666" y="352" width="150" height="56" rx="10" fill="#16202f" stroke="#2a3a52"/>
+          <text x="741" y="376" fill="#e7eef7" font-size="13" font-weight="700" text-anchor="middle">Splunk Cloud</text>
+          <text x="741" y="394" fill="#8ea3bd" font-size="11" text-anchor="middle">host-down alerts</text>
+        </g>
+
+        <!-- grafana -->
+        <g>
+          <rect x="756" y="150" width="140" height="70" rx="10" fill="#16202f" stroke="#f5b93d"/>
+          <text x="826" y="180" fill="#e7eef7" font-size="13" font-weight="700" text-anchor="middle">Grafana</text>
+          <text x="826" y="200" fill="#8ea3bd" font-size="11" text-anchor="middle">state · uptime · cost</text>
+        </g>
+
+        <!-- on-prem servers -->
+        <g>
+          <rect x="962" y="192" width="180" height="58" rx="10" fill="#16202f" stroke="#35c46b"/>
+          <text x="1052" y="216" fill="#e7eef7" font-size="13" font-weight="700" text-anchor="middle">ONPREM-WEB-01</text>
+          <text x="1052" y="234" fill="#8ea3bd" font-size="11" text-anchor="middle">PRIMARY · Web app</text>
+        </g>
+        <g>
+          <rect x="962" y="258" width="180" height="52" rx="10" fill="#16202f" stroke="#2a3a52"/>
+          <text x="1052" y="280" fill="#e7eef7" font-size="13" font-weight="700" text-anchor="middle">ONPREM-WEB-02</text>
+          <text x="1052" y="298" fill="#8ea3bd" font-size="11" text-anchor="middle">peer host</text>
+        </g>
+        <!-- self-heal pipeline -->
+        <g>
+          <rect x="962" y="356" width="180" height="52" rx="10" fill="#16202f" stroke="#3aa0ff"/>
+          <text x="1052" y="378" fill="#e7eef7" font-size="12" font-weight="700" text-anchor="middle">Restart pipeline</text>
+          <text x="1052" y="396" fill="#8ea3bd" font-size="11" text-anchor="middle">auto self-heal on-prem</text>
+        </g>
+
+        <!-- azure vm -->
+        <g>
+          <rect x="500" y="60" width="230" height="66" rx="12" fill="#16202f" stroke="#3aa0ff"/>
+          <text x="615" y="88" fill="#e7eef7" font-size="14" font-weight="700" text-anchor="middle">Azure VM — warm standby</text>
+          <text x="615" y="108" fill="#8ea3bd" font-size="11" text-anchor="middle">BACKUP · only pays while serving</text>
+        </g>
+
+        <!-- wires -->
+        <!-- clients -> route -> haproxy -->
+        <path d="M190,231 L248,231" fill="none" stroke="#7f97b8" stroke-width="2.5" marker-end="url(#arrow)"/>
+        <path d="M400,231 L498,231" fill="none" stroke="#7f97b8" stroke-width="2.5" marker-end="url(#arrow)"/>
+        <!-- haproxy -> onprem (green primary) -->
+        <path d="M730,214 C 850,214 880,221 960,221" fill="none" stroke="#35c46b" stroke-width="3" marker-end="url(#arrowG)"/>
+        <text x="812" y="206" fill="#35c46b" font-size="11" font-weight="700">normal</text>
+        <!-- haproxy -> azure (blue backup) -->
+        <path d="M615,186 L615,128" fill="none" stroke="#3aa0ff" stroke-width="3" stroke-dasharray="7 6" marker-end="url(#arrowZ)"/>
+        <text x="625" y="150" fill="#3aa0ff" font-size="11" font-weight="700">on failover</text>
+        <!-- signals -> controller -->
+        <path d="M575,352 L600,314" fill="none" stroke="#7f97b8" stroke-width="2" marker-end="url(#arrow)"/>
+        <path d="M720,352 L660,314" fill="none" stroke="#7f97b8" stroke-width="2" marker-end="url(#arrow)"/>
+        <!-- controller -> grafana -->
+        <path d="M714,282 C 740,282 760,250 800,222" fill="none" stroke="#f5b93d" stroke-width="2" marker-end="url(#arrow)"/>
+        <!-- controller -> restart pipeline -->
+        <path d="M714,300 C 850,330 900,360 960,378" fill="none" stroke="#3aa0ff" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrowZ)"/>
+      </svg>
+    </div>
+    <p class="hint" style="margin-top:6px">Green = normal traffic to on-prem · blue dashed = automatic failover to Azure · the controller and HAProxy live in a <b>different datacenter</b> than the servers they protect.</p>
+  </section>
+
+  <!-- 3d: What runs on the Azure standby -->
+  <section class="slide">
+    <div class="kicker">Clearing up a common question</div>
+    <h2>The Azure VM runs the real service — it is not a proxy</h2>
+    <div class="grid" style="grid-template-columns:1.05fr .95fr; gap:26px; flex:1">
+      <div>
+        <p><b>HAProxy is the only proxy</b> (it runs in ARO). It never does the work — it just steers each request to whichever copy is healthy.</p>
+        <p>The <b class="azure">Azure VM is a warm standby running the same web app</b> — same HTTPS :443, same <span class="mono">/health/ready</span> — so on failover it genuinely serves traffic.</p>
+        <p class="muted">Receptionist (HAProxy) routes the call. Office A = on-prem. Office B = the Azure VM, which must be a real, equipped copy — not a second receptionist. Forwarding to a dead on-prem would be pointless.</p>
+        <p>It works <b>if</b> two things hold:</p>
+        <ul>
+          <li>The app can <b>run on the VM</b> (installed or containerized), listening on :443 with a health endpoint.</li>
+          <li>It can <b>reach its data + dependencies</b> from Azure (database, file shares, licenses, other services).</li>
+        </ul>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <h3>The one question that decides the effort</h3>
+        <p><span class="pill g">Easy</span> Web app is <b>stateless + reads a shared DB</b> reachable from Azure → just install the app on the VM and point it at the same DB. True hot copy.</p>
+        <p style="margin-top:10px"><span class="pill r">Harder</span> Web app depends on <b>on-prem-only</b> things (local shares, other on-prem services, hardware/licenses) → those must be reachable from Azure, or data replicated. That's its own project.</p>
+        <p class="azure" style="margin-top:12px"><b>Our load balancer decides *when* to fail over; provisioning + syncing the standby is the piece to confirm.</b></p>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:6px">In test today, <span class="mono">azure-mock</span> is a whoami placeholder standing in for the real Web app on the VM.</p>
+  </section>
+
+  <!-- 4: Live demo -->
+  <section class="slide" id="demo-slide">
+    <div class="kicker">Live demo</div>
+    <h2>2:30&nbsp;AM incident — watch the service stay up</h2>
+    <div class="demo">
+      <div class="stage" id="stage">
+        <div class="clock" id="clock">21:00</div>
+        <div class="badge" id="badge">HEALTHY · on-prem</div>
+
+        <svg class="wires" viewBox="0 0 720 420" preserveAspectRatio="none">
+          <path id="w-cl" class="wire flow" d="M 180,190 L 300,190" />
+          <path id="w-op" class="wire onprem flow" d="M 450,180 C 540,150 540,90 600,80" />
+          <path id="w-az" class="wire azure" d="M 450,200 C 540,250 540,300 600,300" />
+        </svg>
+
+        <div class="node clients"><div class="t">Clients</div><div class="s">requests</div></div>
+        <div class="node lb"><div class="t">HAProxy + Controller</div><div class="s">on ARO</div></div>
+        <div class="node onprem serving" id="n-onprem">
+          <div class="t">On-prem host</div><div class="s" id="op-s">ONPREM-WEB-01 · CPU 20%</div>
+          <div class="gauge"><i id="op-gauge"></i></div>
+        </div>
+        <div class="node azure" id="n-azure"><div class="t">Azure VM</div><div class="s">warm standby</div></div>
+
+        <div class="banner" id="banner"><div class="h" id="banner-h"></div><div class="muted" id="banner-b"></div></div>
+      </div>
+
+      <div class="side">
+        <div class="controls">
+          <button class="btn primary" onclick="scenario()">▶ 2:30 AM incident</button>
+          <button class="btn danger" onclick="disaster()">💥 Server-room disaster</button>
+          <button class="btn warn" onclick="overload()">Overload on-prem</button>
+          <button class="btn danger" onclick="killOnprem()">Kill on-prem</button>
+          <button class="btn ok" onclick="recover()">Recover on-prem</button>
+          <button class="btn" onclick="resetDemo()">↺ Reset</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="k">Downtime avoided</div><div class="v green" id="s-down">0s</div></div>
+          <div class="stat"><div class="k">Failover time</div><div class="v" id="s-ft">—</div></div>
+          <div class="stat"><div class="k">Azure time used</div><div class="v azure" id="s-az">0s</div></div>
+          <div class="stat"><div class="k">Est. Azure cost</div><div class="v" id="s-cost">$0.00</div></div>
+        </div>
+        <div class="log" id="log"></div>
+        <div class="hint">Same logic as the real controller: <span class="mono">Healthy → Degraded → FailedOver → Recovering</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4b: Proof it works -->
+  <section class="slide">
+    <div class="kicker">Not a slide-only claim · measured on ARO test · 2026-09-21</div>
+    <h2>We ran a real outage. It worked as expected.</h2>
+    <div class="result-hero">
+      <div class="card">
+        <p class="muted" style="margin:0 0 6px">Automated benchmark + durability suite</p>
+        <div class="stamp">PASS — up in 6.4 s · 13/13 durability steps</div>
+        <p style="margin-top:14px">We killed the on-prem mock (scaled to zero) — once, then repeatedly, then
+        held it down. The controller shifted to Azure every time and failed back with no downtime.</p>
+        <ul style="margin-top:6px">
+          <li>Durability suite: <b class="green">13/13</b> — every failover <b>6.5–6.6 s</b>, fall-back <b class="green">0 s</b> downtime.</li>
+          <li>Sudden death · flapping · sustained outage — recovers within seconds in every case.</li>
+          <li>Every down &amp; up is visible in <b class="amber">Grafana</b> timelines and fires a <b class="azure">Splunk/Teams</b> alert.</li>
+          <li>Zero-cost — whoami mocks, no real server touched.</li>
+        </ul>
+      </div>
+      <div class="card bars">
+        <div class="bar-row"><div class="lbl">Client-visible outage</div>
+          <div class="bar-track"><i style="width:6%;background:var(--green)"></i></div><div class="val green">6.9 s</div></div>
+        <div class="bar-row"><div class="lbl">On-prem down → up on Azure</div>
+          <div class="bar-track"><i style="width:5%;background:var(--azure)"></i></div><div class="val azure">6.4 s</div></div>
+        <div class="bar-row"><div class="lbl">Controller failover (metric)</div>
+          <div class="bar-track"><i style="width:2%;background:var(--azure)"></i></div><div class="val azure">0 s</div></div>
+        <div class="bar-row"><div class="lbl">Recovery hold window</div>
+          <div class="bar-track"><i style="width:21%;background:var(--amber)"></i></div><div class="val amber">25 s</div></div>
+        <div class="bar-row"><div class="lbl">Fall-back to on-prem</div>
+          <div class="bar-track"><i style="width:25%;background:var(--green)"></i></div><div class="val green">29.5 s</div></div>
+        <div class="bar-row"><div class="lbl">Target (SLA budget)</div>
+          <div class="bar-track"><i style="width:100%;background:#33415a"></i></div><div class="val muted">120 s</div></div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:6px">Reproducible any time: <span class="mono">benchmark/Invoke-FailoverBenchmark.ps1</span> (single) and <span class="mono">Invoke-DurabilityTest.ps1</span> (repeated) against hybridlb-test. Down &amp; up show live in Grafana + Splunk.</p>
+  </section>
+
+  <!-- 5: Cost trial / decision -->
+  <section class="slide">
+    <div class="kicker">One-month trial → management decision</div>
+    <h2>Let the data decide: cloud, hybrid, or on-prem</h2>
+    <div class="grid cards">
+      <div class="card"><h3>Uptime</h3><p class="big green">99.99%</p><p class="muted">target, measured per service in Grafana</p></div>
+      <div class="card"><h3>Azure cost</h3><p class="big azure" id="trial-cost">$ / mo</p><p class="muted">only pays while failed over (warm standby)</p></div>
+      <div class="card"><h3>Failovers</h3><p class="big amber">counted</p><p class="muted">how often on-prem actually let us down</p></div>
+    </div>
+    <p style="margin-top:24px">After one month of real evidence, management chooses the hosting strategy — no guessing, no 2:30&nbsp;AM heroics.</p>
+  </section>
+
+  <!-- 6: Team template -->
+  <section class="slide">
+    <div class="kicker">Beyond Web app</div>
+    <h2>A reusable template for the whole team</h2>
+    <div class="grid" style="grid-template-columns:1fr 1fr; gap:26px; flex:1">
+      <div>
+        <p>Most services still run on the same old on-prem boxes. Onboarding one is 4 steps:</p>
+        <ul>
+          <li>Add an HAProxy <b>backend</b> (on-prem primary + Azure backup).</li>
+          <li>Add a service block in <span class="mono">services.yaml</span> (health + thresholds).</li>
+          <li>Add a Route for the hostname.</li>
+          <li>Import the Grafana dashboard + alert rule.</li>
+        </ul>
+        <p class="muted">Test on ARO <b>test/qa</b> first — never prod until we agree.</p>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <h3>Who wins</h3>
+        <p>😴 <b>Colleagues</b> — no more 2:30 AM pages</p>
+        <p>🤝 <b>Customers & partners</b> — the service stays up</p>
+        <p>💸 <b>Management</b> — real cost/uptime data to decide</p>
+        <p style="margin-top:12px" class="azure"><b>We become the example of how to optimize it.</b></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7: Path to production -->
+  <section class="slide">
+    <div class="kicker">Make sense for final deployment · the ask</div>
+    <h2>Understood, tested, working — ready to go to prod</h2>
+    <div class="grid" style="grid-template-columns:1.1fr .9fr; gap:26px; flex:1">
+      <div>
+        <p>We are past "will it work". It is built, deployed to <b>hybridlb-test</b>, and a real outage recovered in <b class="green">6.4 s</b>. The path to production is small and reversible:</p>
+        <ul>
+          <li><b class="green">✔ Done</b> — controller image, HAProxy pod, Grafana dashboard, alert rules, test-cluster run + passing benchmark.</li>
+          <li><b class="amber">1. Point at real backends</b> — swap mock hosts for ONPREM-WEB-01 + the real Azure VM in <span class="mono">services.yaml</span>.</li>
+          <li><b class="amber">2. Prove in QA</b> — run the same benchmark against a real Azure standby, sign off with the platform team.</li>
+          <li><b class="azure">3. Promote to prod</b> — GitOps apply the <span class="mono">overlays/prod</span> (2 replicas, prod Route), start the <b>1-month cost/uptime trial</b>.</li>
+          <li><b class="azure">4. Decide</b> — management picks cloud / hybrid / on-prem from real data.</li>
+        </ul>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center">
+        <h3>Why it's safe to say yes</h3>
+        <p>🔒 <b>Reversible</b> — GitOps, drains back to on-prem automatically; disable = one revert.</p>
+        <p>🧪 <b>Test-first</b> — never touches prod until QA sign-off.</p>
+        <p>💸 <b>Cheap</b> — Azure only bills while actually failed over.</p>
+        <p>♻️ <b>Reusable</b> — same template for every service on the old boxes.</p>
+        <p style="margin-top:12px" class="green"><b>Decision needed: green-light the QA run on a real Azure VM.</b></p>
+      </div>
+    </div>
+  </section>
+
+  <div class="nav">
+    <button class="btn" onclick="go(-1)">← Prev</button>
+    <div class="dots" id="dots"></div>
+    <button class="btn" onclick="go(1)">Next →</button>
+  </div>
+</div>
+
+<script>
+  /* ---------------- slide deck ---------------- */
+  const slides = [...document.querySelectorAll('.slide')];
+  const demoIndex = slides.findIndex(s => s.id === 'demo-slide');
+  const dots = document.getElementById('dots');
+  let cur = 0;
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => show(i);
+    dots.appendChild(d);
+  });
+  function show(i) {
+    cur = (i + slides.length) % slides.length;
+    slides.forEach((s, k) => s.classList.toggle('active', k === cur));
+    [...dots.children].forEach((d, k) => d.classList.toggle('on', k === cur));
+    if (cur === demoIndex) resetDemo();
+  }
+  function go(n) { show(cur + n); }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') go(1);
+    else if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key.toLowerCase() === 'd') show(demoIndex);
+  });
+
+  /* ---------------- live demo ---------------- */
+  const el = id => document.getElementById(id);
+  const nOn = el('n-onprem'), nAz = el('n-azure'), badge = el('badge');
+  const wOp = el('w-op'), wAz = el('w-az'), gauge = el('op-gauge'), opS = el('op-s');
+  const banner = el('banner');
+  let demo, timer;
+
+  function baseState() {
+    return { state: 'healthy', serving: 'onprem', cpu: 20, downtime: 0, azure: 0,
+             failoverStart: null, failoverMs: null };
+  }
+  function resetDemo() {
+    clearInterval(timer);
+    demo = baseState();
+    el('log').innerHTML = '';
+    el('s-ft').textContent = '—';
+    setClock(21, 0);
+    render();
+    log('t', 'Monitoring on-prem ' + tag('ONPREM-WEB-01','g') + ' — all healthy.');
+    timer = setInterval(tick, 1000);
+  }
+  function setClock(h, m) { el('clock').textContent =
+    String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'); }
+
+  function tick() {
+    // accrue downtime-avoided + azure usage while failed over due to a bad primary
+    if (demo.serving === 'azure') {
+      demo.azure++;
+      if (demo.state === 'failover' || demo.state === 'recovering') demo.downtime++;
+    }
+    render();
+  }
+
+  function setBadge(txt, cls) {
+    badge.textContent = txt;
+    const map = { g:['rgba(53,196,107,.15)','var(--green)'],
+                  a:['rgba(245,185,61,.15)','var(--amber)'],
+                  r:['rgba(255,93,93,.15)','var(--red)'],
+                  z:['rgba(58,160,255,.15)','var(--azure)'] };
+    badge.style.background = map[cls][0]; badge.style.color = map[cls][1];
+  }
+
+  function render() {
+    // cpu gauge
+    gauge.style.width = Math.min(100, demo.cpu) + '%';
+    gauge.style.background = demo.cpu >= 85 ? 'var(--red)' : demo.cpu >= 65 ? 'var(--amber)' : 'var(--green)';
+    opS.textContent = 'ONPREM-WEB-01 · CPU ' + Math.round(demo.cpu) + '%';
+
+    // serving path
+    const onAzure = demo.serving === 'azure';
+    wOp.classList.toggle('flow', !onAzure);
+    wAz.classList.toggle('flow', onAzure);
+    nOn.classList.toggle('serving', !onAzure && demo.state !== 'failover');
+    nAz.classList.toggle('serving', onAzure);
+
+    nOn.classList.toggle('dead', demo.state === 'failover' && demo.cpu >= 99);
+    nOn.classList.toggle('hot', demo.state === 'degraded');
+
+    // badge
+    if (demo.state === 'healthy') setBadge('HEALTHY · on-prem', 'g');
+    else if (demo.state === 'degraded') setBadge('DEGRADED · watching', 'a');
+    else if (demo.state === 'failover') setBadge('FAILED OVER · Azure', 'z');
+    else if (demo.state === 'recovering') setBadge('RECOVERING', 'z');
+
+    // stats
+    el('s-down').textContent = demo.downtime + 's';
+    el('s-az').textContent = demo.azure + 's';
+    el('s-cost').textContent = '$' + (demo.azure/3600 * 0.20).toFixed(2);
+    if (demo.failoverMs != null) el('s-ft').textContent = demo.failoverMs + 'ms';
+  }
+
+  function tag(t, c) { return '<b class="'+c+'">'+t+'</b>'; }
+  function log(time, html) {
+    const d = document.createElement('div');
+    d.innerHTML = '<span class="t">'+el('clock').textContent+'</span> &nbsp; ' + html;
+    el('log').prepend(d);
+  }
+  function showBanner(h, b, ms=2600) {
+    el('banner-h').innerHTML = h; el('banner-b').innerHTML = b;
+    banner.classList.add('show');
+    setTimeout(() => banner.classList.remove('show'), ms);
+  }
+
+  /* manual controls */
+  function overload() {
+    demo.cpu = 92; demo.state = 'degraded';
+    log('t', 'Signal: CPU ' + tag('92%','a') + ' — entered ' + tag('DEGRADED','a'));
+    render();
+  }
+  function doFailover(reason) {
+    if (demo.serving === 'azure') return;
+    demo.failoverMs = 600 + Math.floor(Math.random()*500);
+    demo.serving = 'azure'; demo.state = 'failover';
+    log('t', 'Controller drained on-prem → traffic shifted to ' + tag('Azure VM','z') +
+        ' in ' + tag(demo.failoverMs+'ms','z') + ' ('+reason+')');
+    render();
+    showBanner('✅ Service stayed UP', 'Traffic is now served from Azure. No customer impact — engineer still asleep. 😴');
+  }
+  function killOnprem() { demo.cpu = 100; doFailover('primary dead'); selfHealLog(); }
+  function selfHealLog() {
+    log('t', 'Auto-triggered ' + tag('restart services','z') + ' pipeline to repair on-prem');
+  }
+  function recover() {
+    if (demo.serving === 'onprem') return;
+    demo.cpu = 25; demo.state = 'recovering';
+    log('t', 'On-prem health checks passing again — ' + tag('RECOVERING','z'));
+    render();
+    setTimeout(() => {
+      demo.serving = 'onprem'; demo.state = 'healthy'; demo.failoverMs = null;
+      log('t', 'Drained back to on-prem ' + tag('ONPREM-WEB-01','g') +
+          '. Azure used ' + demo.azure + 's · cost $' + (demo.azure/3600*0.20).toFixed(2));
+      render();
+      showBanner('↩ Back on-prem', 'On-prem stable again — automatically fell back to the cheap option.');
+    }, 2500);
+  }
+
+  /* scripted incident */
+  function scenario() {
+    resetDemo();
+    const steps = [
+      [800,  () => { setClock(2, 29); log('t','😴 Nobody awake. Traffic normal.'); }],
+      [1600, () => { setClock(2, 30); demo.cpu = 70; render();
+                     log('t','Splunk: on-prem load climbing — CPU ' + tag('70%','a')); }],
+      [2600, () => { setClock(2, 31); overload(); }],
+      [3600, () => { setClock(2, 31); demo.cpu = 97; render();
+                     log('t','CPU ' + tag('97%','r') + ' sustained — about to die'); }],
+      [4600, () => { setClock(2, 31); doFailover('overloaded, dying'); }],
+      [8000, () => { setClock(2, 40); log('t','On-prem host recovered by platform team job'); recover(); }],
+    ];
+    steps.forEach(([t, fn]) => setTimeout(fn, t));
+  }
+
+  /* whole server room goes down: internet / heating / electricity */
+  function disaster() {
+    resetDemo();
+    const steps = [
+      [600,  () => { setClock(3, 12); log('t','⚡ Server room: power fluctuation detected'); }],
+      [1500, () => { setClock(3, 12); demo.cpu = 100; render();
+                     log('t','🌐 On-prem site unreachable — ' + tag('internet + EL + cooling','r') + ' down'); }],
+      [2400, () => { doFailover('server-room disaster');
+                     log('t','LB unaffected — it runs in ' + tag('Azure, a different datacenter','z')); }],
+      [3200, () => { selfHealLog(); }],
+      [4300, () => { showBanner('🛡️ Disaster-proof hybrid',
+                     'The entire on-prem room is down — every service is already served from Azure. Recovered in under 1 minute.', 4000); }],
+    ];
+    steps.forEach(([t, fn]) => setTimeout(fn, t));
+  }
+</script>
+</body>
+</html>

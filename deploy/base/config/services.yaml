@@ -1,0 +1,49 @@
+# Failover controller configuration.
+# Copy a service block per on-prem host you want to protect — this file is the
+# template the rest of the team reuses when onboarding their own on-prem host.
+
+# Failover mode: "auto" = autonomous (autopilot); "manual" = operator-triggered via /control.
+mode: auto
+
+pollIntervalSeconds: 10
+
+prometheus:
+  # In-cluster Prometheus that already scrapes windows_exporter on the on-prem hosts.
+  baseUrl: http://prometheus.monitoring.svc:9090
+
+haproxy:
+  # HAProxy runtime API socket, reached over localhost because HAProxy runs as a
+  # sidecar in the same pod as this controller.
+  runtimeHost: 127.0.0.1
+  runtimePort: 9999
+
+services:
+  - name: webapp
+    description: Web app (prod) - on-prem primary 192.168.10.20, Azure VM backup 10.20.0.10
+    haproxyBackend: be_webapp
+    primaryServer: onprem
+    backupServer: azurevm
+    primary:
+      # Direct probe to the on-prem host (bypasses HAProxy so we see the real backend health).
+      healthUrl: https://192.168.10.20:443/health/ready
+    backup:
+      healthUrl: https://10.20.0.10:443/health/ready
+    service:
+      # The LB's own front door (HAProxy frontend in this pod) - true customer reachability.
+      healthUrl: http://localhost:8443/health/ready
+    thresholds:
+      failAfterConsecutiveFailures: 3
+      cpuDegradedPercent: 85
+      memoryDegradedPercent: 85
+      latencyP95DegradedMs: 2000
+      degradedSustainSeconds: 60
+      recoveryStableSeconds: 300
+    signals:
+      # windows_exporter (job/instance to match your Prometheus scrape config).
+      cpuPercent: >-
+        100 - (avg(rate(windows_cpu_time_total{instance="192.168.10.20:9182",mode="idle"}[2m])) * 100)
+      memoryPercent: >-
+        100 * (1 - windows_memory_available_bytes{instance="192.168.10.20:9182"}
+        / windows_cs_physical_memory_bytes{instance="192.168.10.20:9182"})
+      # Leave null to fall back to the controller's own probe latency.
+      latencyP95Ms: null

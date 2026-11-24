@@ -1,0 +1,103 @@
+# Test-only stand-ins for the on-prem host and the Azure VM, so the failover benchmark
+# can trigger a real outage on ARO test without touching any real server.
+# `traefik/whoami` returns 200 on any path and echoes its hostname, so the benchmark can
+# SEE which backend served each request (onprem-mock vs azure-mock).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onprem-mock
+  labels:
+    app: onprem-mock
+    role: primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onprem-mock
+  template:
+    metadata:
+      labels:
+        app: onprem-mock
+        role: primary
+      annotations:
+        instrumentation.opentelemetry.io/inject-dotnet: "false"
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10.2
+          args: ["--name", "onprem-mock", "--port", "8080"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits: { cpu: 100m, memory: 128Mi }
+            requests: { cpu: 50m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onprem-mock
+spec:
+  selector:
+    app: onprem-mock
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-mock
+  labels:
+    app: azure-mock
+    role: backup
+spec:
+  # Cost control: Azure standby stays OFF by default. Scale to 1 before a test/presentation:
+  #   oc -n hybridlb-test scale deployment azure-mock --replicas=1
+  replicas: 0
+  selector:
+    matchLabels:
+      app: azure-mock
+  template:
+    metadata:
+      labels:
+        app: azure-mock
+        role: backup
+      annotations:
+        instrumentation.opentelemetry.io/inject-dotnet: "false"
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10.2
+          args: ["--name", "azure-mock", "--port", "8080"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits: { cpu: 100m, memory: 128Mi }
+            requests: { cpu: 50m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-mock
+spec:
+  selector:
+    app: azure-mock
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,38 @@
+# Test failover config: probes the in-cluster mock backends. CPU/mem signals are disabled
+# here (no windows_exporter in test); the benchmark exercises health-based failover.
+# Manual by default in test so failover/failback are operator-triggered for the live demo.
+# Flip to autopilot at runtime with:  POST /control/mode/auto  (see autopilot.bat).
+mode: manual
+pollIntervalSeconds: 5
+
+prometheus:
+  baseUrl: http://prometheus.monitoring.svc:9090
+
+haproxy:
+  runtimeHost: 127.0.0.1
+  runtimePort: 9999
+
+services:
+  - name: webapp
+    description: Web app failover benchmark (ARO test, mock backends)
+    haproxyBackend: be_webapp
+    primaryServer: onprem
+    backupServer: azurevm
+    primary:
+      healthUrl: http://onprem-mock:80/health
+    backup:
+      healthUrl: http://azure-mock:80/health
+    service:
+      # The LB's own front door (HAProxy frontend in this pod) - true customer reachability.
+      healthUrl: http://localhost:8443/health
+    thresholds:
+      failAfterConsecutiveFailures: 2
+      cpuDegradedPercent: 85
+      memoryDegradedPercent: 85
+      latencyP95DegradedMs: 2000
+      degradedSustainSeconds: 30
+      recoveryStableSeconds: 20
+    signals:
+      cpuPercent: null
+      memoryPercent: null
+      latencyP95Ms: null

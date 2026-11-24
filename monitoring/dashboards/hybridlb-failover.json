@@ -1,0 +1,198 @@
+{
+  "title": "Hybrid Failover Load Balancer",
+  "uid": "hybridlb-failover",
+  "tags": ["hybrid-lb", "failover", "loadbalancer"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      },
+      {
+        "name": "vm_hourly_cost",
+        "type": "constant",
+        "label": "Azure VM cost per hour",
+        "query": "0.20",
+        "current": { "text": "0.20", "value": "0.20" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Failover state",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "On-prem", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "Degraded", "color": "yellow" } } },
+            { "type": "value", "options": { "2": { "text": "On Azure", "color": "red" } } },
+            { "type": "value", "options": { "3": { "text": "Recovering", "color": "blue" } } }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "textMode": "value_and_name" },
+      "targets": [
+        { "expr": "hybridlb_failover_state", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "On-prem primary healthy",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "textMode": "value_and_name" },
+      "targets": [
+        { "expr": "hybridlb_primary_healthy", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Azure backup ready (escape hatch)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 34 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "READY", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "NOT READY", "color": "red" } } }
+          ]
+        }
+      },
+      "options": { "colorMode": "background", "textMode": "value_and_name" },
+      "targets": [
+        { "expr": "hybridlb_backup_healthy", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failovers (selected range)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "sum by (service) (increase(hybridlb_failover_events_total[$__range]))", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "On-prem CPU / memory %",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100 } },
+      "targets": [
+        { "expr": "hybridlb_primary_cpu_percent", "legendFormat": "{{service}} cpu", "refId": "A" },
+        { "expr": "hybridlb_primary_memory_percent", "legendFormat": "{{service}} mem", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Probe latency (ms)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "expr": "hybridlb_primary_latency_ms", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Azure hours used (range)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "h", "decimals": 2 } },
+      "targets": [
+        { "expr": "sum by (service) (increase(hybridlb_azure_active_seconds_total[$__range])) / 3600", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Estimated Azure cost (range)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } },
+      "targets": [
+        { "expr": "sum(increase(hybridlb_azure_active_seconds_total[$__range])) / 3600 * $vm_hourly_cost", "legendFormat": "azure cost", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "On-prem uptime % (range)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 3, "max": 100 } },
+      "targets": [
+        { "expr": "100 * avg_over_time(hybridlb_primary_healthy[$__range])", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "state-timeline",
+      "title": "On-prem primary up / down over time",
+      "description": "Green = on-prem healthy, red = on-prem down. Spot every outage and every recovery.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 20 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 90, "lineWidth": 0 },
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } },
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } }
+          ]
+        }
+      },
+      "options": { "mergeValues": true, "showValue": "auto", "rowHeight": 0.9, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "hybridlb_primary_healthy", "legendFormat": "{{service}} on-prem", "refId": "A" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "state-timeline",
+      "title": "Where traffic is served over time",
+      "description": "The full failover story: On-prem, Degraded, On Azure, Recovering.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 27 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 90, "lineWidth": 0 },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "On-prem", "color": "green" } } },
+            { "type": "value", "options": { "1": { "text": "Degraded", "color": "yellow" } } },
+            { "type": "value", "options": { "2": { "text": "On Azure", "color": "red" } } },
+            { "type": "value", "options": { "3": { "text": "Recovering", "color": "blue" } } }
+          ]
+        }
+      },
+      "options": { "mergeValues": true, "showValue": "auto", "rowHeight": 0.9, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        { "expr": "hybridlb_failover_state", "legendFormat": "{{service}}", "refId": "A" }
+      ]
+    }
+  ]
+}

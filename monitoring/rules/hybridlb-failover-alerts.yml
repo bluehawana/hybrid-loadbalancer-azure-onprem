@@ -1,0 +1,96 @@
+# Alert rules for the failover load balancer.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hybridlb-failover-alerts
+  labels:
+    role: alert-rules
+spec:
+  groups:
+    - name: hybridlb.failover
+      interval: 30s
+      rules:
+        - alert: HybridLbFailoverActive
+          expr: hybridlb_failover_active == 1
+          for: 1m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} is now served from the Azure backup (on-prem failed over)"
+            description: "Traffic shifted off the on-prem host. Confirm on-prem recovery; the load balancer will shift back automatically once it is stably healthy."
+
+        - alert: HybridLbPrimaryDown
+          expr: hybridlb_primary_healthy == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} on-prem primary health check failing"
+            description: "The on-prem host is failing health checks. Traffic should be on Azure — verify hybridlb_failover_active for this service."
+
+        - alert: HybridLbFailoverFlapping
+          expr: increase(hybridlb_failover_events_total[15m]) > 4
+          for: 0m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} failover is flapping"
+            description: "More than 4 failover/recovery transitions in 15m — review thresholds or on-prem stability."
+
+        - alert: HybridFailoverControllerDown
+          expr: up{job="hybrid-loadbalancer-controller"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Failover controller is not being scraped"
+            description: "The predictive failover controller is down or unreachable; only HAProxy's reactive failover remains."
+
+        # --- The safety net must watch itself. These exist because a real incident (a silent
+        # 503) went unnoticed: log-pattern monitoring cannot see a silent outage. ---
+
+        - alert: HybridLbNoHealthyTarget
+          expr: (hybridlb_primary_healthy == 0) and on(service) (hybridlb_backup_healthy == 0)
+          for: 30s
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} has NO healthy target (on-prem AND Azure both down)"
+            description: "Both the on-prem primary and the Azure backup are failing health checks. The service is unavailable until a target recovers — escalate immediately."
+
+        - alert: HybridLbBackupNotReady
+          expr: hybridlb_backup_healthy == 0
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "{{ $labels.service }} Azure backup (escape hatch) is not healthy"
+            description: "The standby is failing its health check, so a failover would have nowhere to go. Fix the backup before the primary needs it."
+
+        - alert: HybridLbNoHealthData
+          expr: absent(hybridlb_primary_healthy)
+          for: 3m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "No health data is being published for any service"
+            description: "The controller has stopped exporting hybridlb_primary_healthy. Silence is treated as failure: assume monitoring is blind and investigate the controller/scrape immediately."
+
+        # Dead-man's switch: this alert is ALWAYS firing on purpose. Route it to a heartbeat
+        # receiver (Teams/Splunk/healthchecks.io). If the notification ever stops arriving, the
+        # alert pipeline itself is broken — which is exactly the failure mode we just hit.
+        - alert: HybridLbWatchdog
+          expr: vector(1)
+          labels:
+            severity: none
+            team: platform
+          annotations:
+            summary: "Hybrid failover alert pipeline heartbeat"
+            description: "If you stop receiving this heartbeat, Prometheus/Alertmanager is down and no other alert can be trusted."

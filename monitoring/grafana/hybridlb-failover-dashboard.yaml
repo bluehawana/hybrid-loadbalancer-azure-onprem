@@ -1,0 +1,19 @@
+# Publishes monitoring/dashboards/hybridlb-failover.json into the shared Grafana via grafana-operator.
+# The JSON ships in a ConfigMap (hybridlb-failover-dashboard) in the same namespace as the Grafana
+# instance (monitoring).
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: hybridlb-failover
+  namespace: monitoring
+  labels:
+    app: hybrid-loadbalancer
+spec:
+  resyncPeriod: 10m
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  folderRef: monitoring-folder
+  configMapRef:
+    name: hybridlb-failover-dashboard
+    key: hybridlb-failover.json

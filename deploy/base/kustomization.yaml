@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+configMapGenerator:
+  - name: haproxy-config
+    files:
+      - haproxy.cfg=config/haproxy.cfg
+  - name: failover-services
+    files:
+      - services.yaml=config/services.yaml
+
+images:
+  - name: hybrid-loadbalancer-controller-img
+    newName: youracr.azurecr.io/hybrid-loadbalancer-controller
+    newTag: "0.4.0"

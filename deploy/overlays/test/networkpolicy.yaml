@@ -1,0 +1,23 @@
+# The platform's default-deny + allow-prometheus-scrape-from-monitoring only opens 8443.
+# Our controller exposes Prometheus metrics on 8080 (and HAProxy on 8404), so open those
+# to the monitoring Prometheus explicitly. Scoped to this app's pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape-hybrid-loadbalancer
+spec:
+  podSelector:
+    matchLabels:
+      app: hybrid-loadbalancer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 8404
+          protocol: TCP

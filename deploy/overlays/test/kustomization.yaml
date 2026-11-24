@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Trial + benchmark target. Validate the whole failover flow here on ARO test before any
+# conversation about prod. Nothing in this overlay references hybridlb-prod.
+namespace: hybridlb-test
+
+resources:
+  - ../../base
+  - ingress.yaml
+  - mocks.yaml
+  - networkpolicy.yaml
+
+# Override base config with test versions that point HAProxy + the controller at the
+# in-cluster mock backends (onprem-mock / azure-mock).
+configMapGenerator:
+  - name: haproxy-config
+    behavior: replace
+    files:
+      - haproxy.cfg=config/haproxy.cfg
+  - name: failover-services
+    behavior: replace
+    files:
+      - services.yaml=config/services.yaml

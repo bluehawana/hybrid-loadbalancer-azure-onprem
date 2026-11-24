@@ -1,0 +1,25 @@
+# Public entrypoint. At cutover, point the real service hostname here so client and
+# partner traffic flows through the failover load balancer instead of straight to on-prem.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hybrid-loadbalancer-ingress
+  annotations:
+    route.openshift.io/termination: edge
+    haproxy.router.openshift.io/timeout: 630s
+spec:
+  rules:
+    - host: webapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hybrid-loadbalancer
+                port:
+                  name: proxy
+  tls:
+    - hosts:
+        - webapp.example.com
+      secretName: webapp-tls-secret
