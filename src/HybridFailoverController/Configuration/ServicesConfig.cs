@@ -4,7 +4,7 @@ public sealed class ServicesConfig
 {
     // "auto" = autonomous failover (autopilot); "manual" = operator-triggered via /control endpoints.
     public string Mode { get; set; } = "auto";
-    public int PollIntervalSeconds { get; set; } = 10;
+    public int PollIntervalSeconds { get; set; } = 30;
     public PrometheusOptions Prometheus { get; set; } = new();
     public HaproxyOptions Haproxy { get; set; } = new();
     public AzureDevOpsOptions AzureDevOps { get; set; } = new();

@@ -5,7 +5,7 @@
 # Failover mode: "auto" = autonomous (autopilot); "manual" = operator-triggered via /control.
 mode: auto
 
-pollIntervalSeconds: 10
+pollIntervalSeconds: 30
 
 prometheus:
   # In-cluster Prometheus that already scrapes windows_exporter on the on-prem hosts.
